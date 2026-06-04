@@ -12,7 +12,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
 // Serve map files so the client can also fetch them directly if needed
-app.use('/maps', express.static(path.join(__dirname, '../../maps')));
+app.use('/maps', express.static(path.join(__dirname, '../maps')));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const lobbies = new Map();

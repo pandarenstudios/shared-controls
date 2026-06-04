@@ -29,7 +29,7 @@ const KEY_SLICES = {
 };
 
 function loadMap(name) {
-  const p = path.join(__dirname, '../../maps', `${name}.json`);
+  const p = path.join(__dirname, '../maps', `${name}.json`);
   return JSON.parse(readFileSync(p, 'utf-8'));
 }
 
