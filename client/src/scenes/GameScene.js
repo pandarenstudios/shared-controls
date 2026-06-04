@@ -2,14 +2,17 @@ import Phaser from 'phaser';
 import { socket } from '../socket.js';
 
 const PALETTE = {
-  floor:   0x16213e,
-  wall:    0x2d3561,
-  grid:    0x0f3460,
-  char:    0xe94560,
-  charDot: 0xffd700,
+  floor:      0x16213e,
+  wall:       0x2d3561,
+  grid:       0x0f3460,
+  char:       0xe94560,
+  charDot:    0xffd700,
+  gem:        0xffd700,
+  gemGlow:    0xffff88,
+  exitLocked: 0x444466,
+  exitOpen:   0x00e676,
 };
 
-// Colour each player slot differently so the HUD is easy to read
 const SLOT_COLORS = ['#e94560', '#4fc3f7', '#81c784', '#ffb74d'];
 
 export class GameScene extends Phaser.Scene {
@@ -19,19 +22,39 @@ export class GameScene extends Phaser.Scene {
     const payload    = this.game.registry.get('startPayload');
     const mySocketId = this.game.registry.get('mySocketId');
 
-    const { mapData, character, players } = payload;
+    const { mapData, character, players, gems, exit, totalGems } = payload;
     const me = players.find(p => p.socketId === mySocketId);
 
-    this.charPos = { ...character };
+    this.charPos   = { ...character };
+    this.gemsLeft  = totalGems;
+    this.totalGems = totalGems;
+    this.exitPos   = exit;
+    this.won       = false;
 
     this._drawMap(mapData);
+    this._drawExit(exit, false);
+    this._drawGems(gems);
     this._createCharacterGraphic();
     this._createHUD(players, me);
     this._setupInput(me?.keySlice);
 
     socket.on('state', ({ character: c }) => { this.charPos = c; });
 
-    // Release all key inputs when this scene shuts down to avoid stuck keys
+    socket.on('gem-collected', ({ id, gemsLeft }) => {
+      this.gemsLeft = gemsLeft;
+      // Remove the individual gem graphic
+      this.gemGraphics.get(id)?.destroy();
+      this.gemGraphics.delete(id);
+      this._updateGemCounter();
+      // Unlock the exit once all gems are gone
+      if (gemsLeft === 0) this._openExit();
+    });
+
+    socket.on('game-won', ({ time }) => {
+      this.won = true;
+      this._showWinScreen(time);
+    });
+
     this.events.once('shutdown', () => {
       if (me?.keySlice) {
         for (const key of me.keySlice.inputs) {
@@ -39,10 +62,12 @@ export class GameScene extends Phaser.Scene {
         }
       }
       socket.off('state');
+      socket.off('gem-collected');
+      socket.off('game-won');
     });
   }
 
-  // ── Private ───────────────────────────────────────────────────────────────
+  // ── Map & objects ─────────────────────────────────────────────────────────
 
   _drawMap({ tiles, tileSize }) {
     const gfx = this.add.graphics();
@@ -63,54 +88,159 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  _drawExit(exit, open) {
+    if (!exit) return;
+    if (this.exitGfx) this.exitGfx.destroy();
+    const gfx = this.add.graphics().setDepth(4);
+    const color = open ? PALETTE.exitOpen : PALETTE.exitLocked;
+    gfx.fillStyle(color, open ? 0.7 : 0.4);
+    gfx.fillRect(exit.x - 14, exit.y - 14, 28, 28);
+    gfx.lineStyle(2, color, 1);
+    gfx.strokeRect(exit.x - 14, exit.y - 14, 28, 28);
+    // Small icon lines
+    gfx.lineStyle(2, color, 0.9);
+    gfx.beginPath();
+    gfx.moveTo(exit.x - 5, exit.y);
+    gfx.lineTo(exit.x + 5, exit.y);
+    gfx.moveTo(exit.x + 2, exit.y - 4);
+    gfx.lineTo(exit.x + 5, exit.y);
+    gfx.lineTo(exit.x + 2, exit.y + 4);
+    gfx.strokePath();
+    this.exitGfx = gfx;
+  }
+
+  _openExit() {
+    this._drawExit(this.exitPos, true);
+    // Pulse the exit to draw attention
+    this.tweens.add({
+      targets: this.exitGfx,
+      alpha: { from: 0.5, to: 1 },
+      duration: 400,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  _drawGems(gems) {
+    this.gemGraphics = new Map();
+    for (const gem of gems) {
+      const gfx = this.add.graphics().setDepth(5);
+      gfx.fillStyle(PALETTE.gem, 1);
+      gfx.fillTriangle(
+        gem.x,      gem.y - 9,
+        gem.x - 7,  gem.y + 5,
+        gem.x + 7,  gem.y + 5,
+      );
+      gfx.lineStyle(1, PALETTE.gemGlow, 0.8);
+      gfx.strokeTriangle(
+        gem.x,      gem.y - 9,
+        gem.x - 7,  gem.y + 5,
+        gem.x + 7,  gem.y + 5,
+      );
+      this.gemGraphics.set(gem.id, gfx);
+
+      // Gentle float animation
+      this.tweens.add({
+        targets: gfx,
+        y: '-=4',
+        duration: 900 + Math.random() * 300,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
+  // ── Character ─────────────────────────────────────────────────────────────
+
   _createCharacterGraphic() {
     this.charGfx = this.add.graphics().setDepth(10);
   }
 
+  // ── HUD ───────────────────────────────────────────────────────────────────
+
   _createHUD(players, me) {
+    // Player key labels — top-left
     let y = 6;
     for (const p of players) {
       const isMe    = p.socketId === me?.socketId;
       const color   = SLOT_COLORS[p.slot] ?? '#ffffff';
       const keysStr = p.keySlice ? ` [${p.keySlice.keys.join('+')}] ${p.keySlice.label}` : '';
-      const label   = `${p.name}${isMe ? ' ★' : ''}${keysStr}`;
-
-      this.add.text(6, y, label, {
-        fontSize: '11px',
-        color,
+      this.add.text(6, y, `${p.name}${isMe ? ' ★' : ''}${keysStr}`, {
+        fontSize: '11px', color,
         backgroundColor: '#00000099',
         padding: { x: 4, y: 2 },
       }).setDepth(20);
-
       y += 18;
+    }
+
+    // Gem counter — top-right
+    const mapW = this.game.registry.get('startPayload').mapData.width
+               * this.game.registry.get('startPayload').mapData.tileSize;
+
+    this.gemCountText = this.add.text(mapW - 6, 6, this._gemLabel(), {
+      fontSize: '13px',
+      color: '#ffd700',
+      backgroundColor: '#00000099',
+      padding: { x: 6, y: 3 },
+    }).setOrigin(1, 0).setDepth(20);
+
+    // Objective hint — below gem counter
+    this.hintText = this.add.text(mapW - 6, 26, 'collect all gems, then reach the exit', {
+      fontSize: '10px',
+      color: '#888888',
+      backgroundColor: '#00000099',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(1, 0).setDepth(20);
+  }
+
+  _gemLabel() {
+    return `◆ ${this.totalGems - this.gemsLeft} / ${this.totalGems}`;
+  }
+
+  _updateGemCounter() {
+    this.gemCountText?.setText(this._gemLabel());
+    if (this.gemsLeft === 0) {
+      this.gemCountText?.setColor('#00e676');
+      this.hintText?.setText('exit is now open!').setColor('#00e676');
     }
   }
 
+  // ── Input ─────────────────────────────────────────────────────────────────
+
   _setupInput(slice) {
     if (!slice) return;
-
     const KC = Phaser.Input.Keyboard.KeyCodes;
     const keyCodeMap  = { W: KC.W, S: KC.S, A: KC.A, D: KC.D, SPACE: KC.SPACE };
     const inputAction = { W: 'up', S: 'down', A: 'left', D: 'right', SPACE: 'action' };
-
     for (const keyName of slice.keys) {
       const code = keyCodeMap[keyName];
       if (!code) continue;
       const action = inputAction[keyName];
       const key = this.input.keyboard.addKey(code);
-      key.on('down', () => socket.emit('input', { key: action, pressed: true }));
+      key.on('down', () => { if (!this.won) socket.emit('input', { key: action, pressed: true }); });
       key.on('up',   () => socket.emit('input', { key: action, pressed: false }));
     }
+  }
+
+  // ── Win screen ────────────────────────────────────────────────────────────
+
+  _showWinScreen(time) {
+    const mins = Math.floor(time / 60);
+    const secs = time % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+    const overlay = document.getElementById('win-overlay');
+    document.getElementById('win-time').textContent = timeStr;
+    overlay.classList.remove('hidden');
   }
 
   // ── Loop ──────────────────────────────────────────────────────────────────
 
   update() {
     this.charGfx.clear();
-    // Body
     this.charGfx.fillStyle(PALETTE.char);
     this.charGfx.fillCircle(this.charPos.x, this.charPos.y, 13);
-    // Direction dot (top-right — purely decorative)
     this.charGfx.fillStyle(PALETTE.charDot);
     this.charGfx.fillCircle(this.charPos.x + 5, this.charPos.y - 5, 3);
   }

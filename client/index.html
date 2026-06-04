@@ -102,6 +102,39 @@
     .player-row.you  { border-left: 3px solid #e94560; }
     .player-row .keys { color: #ffd700; font-size: 12px; }
 
+    /* ── Win overlay ── */
+    #win-overlay {
+      position: fixed;
+      inset: 0;
+      background: #0f0e17dd;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+    }
+
+    .win-box {
+      background: #1a1a2e;
+      border: 2px solid #00e676;
+      border-radius: 8px;
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .win-box h2 {
+      color: #00e676;
+      font-size: 28px;
+      letter-spacing: 4px;
+      text-shadow: 0 0 20px #00e67666;
+    }
+
+    .win-box p { color: #aaa; font-size: 14px; }
+    .win-box .time { color: #ffd700; font-size: 22px; letter-spacing: 2px; }
+
     /* ── Start screen ── */
     #start-panel { max-width: 480px; gap: 20px; }
 
@@ -267,6 +300,15 @@
       <p id="waiting-msg" class="muted" style="text-align:center">Waiting for the host to start…</p>
     </div>
 
+  </div>
+
+  <div id="win-overlay" class="hidden">
+    <div class="win-box">
+      <h2>LEVEL COMPLETE!</h2>
+      <p>Completed in</p>
+      <div class="time" id="win-time">0s</div>
+      <button onclick="location.reload()">Play Again</button>
+    </div>
   </div>
 
   <div id="game-container" class="hidden"></div>
