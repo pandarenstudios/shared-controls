@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shared Controls</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0e17;
+      color: #fffffe;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    #ui-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .panel {
+      background: #1a1a2e;
+      border: 2px solid #e94560;
+      border-radius: 8px;
+      padding: 32px;
+      min-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .hidden { display: none !important; }
+
+    h1 { color: #e94560; letter-spacing: 3px; font-size: 22px; }
+    h2 { color: #e94560; letter-spacing: 2px; }
+
+    .muted  { color: #888; font-size: 12px; }
+    .error  { color: #e94560; font-size: 12px; min-height: 16px; }
+
+    input {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 4px;
+      color: #fffffe;
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus { border-color: #e94560; }
+
+    button {
+      background: #e94560;
+      border: none;
+      border-radius: 4px;
+      color: #fffffe;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      padding: 10px 16px;
+      text-transform: uppercase;
+      transition: background 0.15s;
+    }
+    button:hover    { background: #c73652; }
+    button:disabled { background: #333; cursor: not-allowed; }
+    button.secondary { background: #0f3460; }
+    button.secondary:hover { background: #16213e; }
+
+    .divider { border: none; border-top: 1px solid #0f3460; }
+
+    .code-display {
+      font-size: 30px;
+      letter-spacing: 10px;
+      color: #ffd700;
+      text-align: center;
+      padding: 8px;
+      background: #0f3460;
+      border-radius: 4px;
+    }
+
+    #player-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .player-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f3460;
+      border-radius: 4px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    .player-row.you  { border-left: 3px solid #e94560; }
+    .player-row .keys { color: #ffd700; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div id="ui-overlay">
+
+    <!-- ── Menu ── -->
+    <div id="menu-panel" class="panel">
+      <h1>SHARED CONTROLS</h1>
+      <p class="muted">2–4 players. One character. Divided controls.</p>
+
+      <input id="player-name" placeholder="Your name" maxlength="16" autocomplete="off" />
+      <button id="create-btn">Create Lobby</button>
+
+      <hr class="divider" />
+
+      <input id="join-code" placeholder="Lobby code (4 letters)" maxlength="4"
+             autocomplete="off" style="text-transform:uppercase" />
+      <button id="join-btn" class="secondary">Join Lobby</button>
+
+      <div id="menu-error" class="error"></div>
+    </div>
+
+    <!-- ── Lobby ── -->
+    <div id="lobby-panel" class="panel hidden">
+      <h2>LOBBY</h2>
+      <div class="code-display" id="lobby-code-display">----</div>
+      <p class="muted" style="text-align:center">Share this code with your friends</p>
+
+      <div id="player-list"></div>
+
+      <div id="lobby-error" class="error"></div>
+      <button id="start-btn" class="hidden" disabled>Start (need ≥ 2 players)</button>
+      <p id="waiting-msg" class="muted" style="text-align:center">Waiting for the host to start…</p>
+    </div>
+
+  </div>
+
+  <div id="game-container" class="hidden"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "shared-controls",
+  "private": true,
+  "scripts": {
+    "install:all": "cd server && npm i && cd ../client && npm i",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev"
+  }
+}
