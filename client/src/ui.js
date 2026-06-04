@@ -1,22 +1,28 @@
+// Mirror of server KEY_GROUPS — if you add a new group on the server, add it here too.
+const KEY_GROUPS = [
+  { id: 'move-vertical',   label: 'Up / Down',    displayKeys: 'W/↑   S/↓' },
+  { id: 'move-horizontal', label: 'Left / Right',  displayKeys: 'A/←   D/→' },
+  { id: 'action',          label: 'Action',        displayKeys: 'Space' },
+];
+
 export function setupMenuUI(socket, launchGame) {
-  const startPanel = document.getElementById('start-panel');
-  const menuPanel  = document.getElementById('menu-panel');
-  const lobbyPanel = document.getElementById('lobby-panel');
-  const menuError  = document.getElementById('menu-error');
-  const lobbyError = document.getElementById('lobby-error');
-  const nameInput  = document.getElementById('player-name');
-  const joinCode   = document.getElementById('join-code');
-  const createBtn  = document.getElementById('create-btn');
-  const joinBtn    = document.getElementById('join-btn');
-  const startBtn   = document.getElementById('start-btn');
-  const waitMsg    = document.getElementById('waiting-msg');
+  const startPanel  = document.getElementById('start-panel');
+  const menuPanel   = document.getElementById('menu-panel');
+  const lobbyPanel  = document.getElementById('lobby-panel');
+  const menuError   = document.getElementById('menu-error');
+  const nameInput   = document.getElementById('player-name');
+  const joinCode    = document.getElementById('join-code');
+  const createBtn   = document.getElementById('create-btn');
+  const joinBtn     = document.getElementById('join-btn');
+  const startBtn    = document.getElementById('start-btn');
+  const waitMsg     = document.getElementById('waiting-msg');
   const codeDisplay = document.getElementById('lobby-code-display');
   const playerList  = document.getElementById('player-list');
 
-  let mySlot  = -1;
-  let isHost  = false;
+  let mySlot = -1;
+  let isHost = false;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   function showLobby(code) {
     menuPanel.classList.add('hidden');
@@ -26,6 +32,7 @@ export function setupMenuUI(socket, launchGame) {
 
   function renderPlayers(players) {
     playerList.innerHTML = '';
+
     for (const p of players) {
       const row = document.createElement('div');
       row.className = 'player-row' + (p.slot === mySlot ? ' you' : '');
@@ -33,8 +40,32 @@ export function setupMenuUI(socket, launchGame) {
       const nameEl = document.createElement('span');
       nameEl.textContent =
         p.name + (p.slot === mySlot ? ' (you)' : '') + (p.slot === 0 ? ' ♛' : '');
-
       row.appendChild(nameEl);
+
+      if (isHost) {
+        // Host sees a dropdown to reassign any player's keys
+        const select = document.createElement('select');
+        select.className = 'key-group-select';
+        for (const group of KEY_GROUPS) {
+          const opt = document.createElement('option');
+          opt.value = group.id;
+          opt.textContent = group.label;
+          if (group.id === p.keyGroupId) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', () => {
+          socket.emit('assign-key', { slot: p.slot, groupId: select.value });
+        });
+        row.appendChild(select);
+      } else {
+        // Non-host sees a read-only label
+        const group = KEY_GROUPS.find(g => g.id === p.keyGroupId);
+        const keysEl = document.createElement('span');
+        keysEl.className = 'keys';
+        keysEl.textContent = group ? `${group.label}  (${group.displayKeys})` : '';
+        row.appendChild(keysEl);
+      }
+
       playerList.appendChild(row);
     }
 
@@ -49,7 +80,7 @@ export function setupMenuUI(socket, launchGame) {
     }
   }
 
-  // ── Start screen ─────────────────────────────────────────────────────────
+  // ── Start screen ──────────────────────────────────────────────────────────
 
   document.getElementById('play-btn').addEventListener('click', () => {
     startPanel.classList.add('hidden');
@@ -71,7 +102,7 @@ export function setupMenuUI(socket, launchGame) {
       mySlot = res.slot;
       isHost = res.isHost;
       showLobby(res.code);
-      renderPlayers([{ name, slot: 0 }]);
+      // lobby-update arrives from server immediately after and populates the list
     });
   });
 
@@ -89,21 +120,17 @@ export function setupMenuUI(socket, launchGame) {
       mySlot = res.slot;
       isHost = res.isHost;
       showLobby(res.code);
-      // lobby-update will arrive immediately after and populate the player list
     });
   });
 
   startBtn.addEventListener('click', () => socket.emit('start-game'));
 
-  // Allow pressing Enter in the name / code inputs
   nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') createBtn.click(); });
   joinCode.addEventListener('keydown',  e => { if (e.key === 'Enter') joinBtn.click(); });
 
   // ── Socket events ─────────────────────────────────────────────────────────
 
-  socket.on('lobby-update', (players) => {
-    renderPlayers(players);
-  });
+  socket.on('lobby-update', renderPlayers);
 
   socket.on('game-started', (payload) => {
     launchGame(payload, socket.id);

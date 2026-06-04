@@ -35,6 +35,8 @@ io.on('connection', (socket) => {
     socket.join(code);
     socket.data.lobbyCode = code;
     cb({ ok: true, code, slot, isHost: true });
+    // Send initial player list to the host so the lobby UI populates immediately
+    socket.emit('lobby-update', lobby.getPlayerList());
     console.log(`${name} created lobby ${code}`);
   });
 
@@ -52,6 +54,15 @@ io.on('connection', (socket) => {
     io.to(upper).emit('lobby-update', lobby.getPlayerList());
     cb({ ok: true, code: upper, slot, isHost: false });
     console.log(`${name} joined lobby ${upper}`);
+  });
+
+  socket.on('assign-key', ({ slot, groupId }) => {
+    const lobby = lobbies.get(socket.data.lobbyCode);
+    if (!lobby) return;
+    if (lobby.players[0]?.socketId !== socket.id) return; // host only
+    if (lobby.started) return;
+    lobby.assignKey(slot, groupId);
+    io.to(socket.data.lobbyCode).emit('lobby-update', lobby.getPlayerList());
   });
 
   socket.on('start-game', () => {

@@ -4,28 +4,42 @@ import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SPEED       = 160; // px/sec
-const TICK_MS     = 33;  // ~30 ticks/sec
-const HALF        = 12;  // character collision half-size
-const PICKUP_DIST = 20;  // px radius to collect a gem or trigger the exit
+const SPEED       = 160;
+const TICK_MS     = 33;
+const HALF        = 12;
+const PICKUP_DIST = 20;
 
-const KEY_SLICES = {
-  2: [
-    { inputs: ['up', 'down'],    keys: ['W', 'S'], label: 'Up / Down' },
-    { inputs: ['left', 'right'], keys: ['A', 'D'], label: 'Left / Right' },
-  ],
-  3: [
-    { inputs: ['up', 'down'],    keys: ['W', 'S'],   label: 'Up / Down' },
-    { inputs: ['left', 'right'], keys: ['A', 'D'],   label: 'Left / Right' },
-    { inputs: ['action'],        keys: ['SPACE'],     label: 'Action' },
-  ],
-  4: [
-    { inputs: ['up'],    keys: ['W'], label: 'Up' },
-    { inputs: ['down'],  keys: ['S'], label: 'Down' },
-    { inputs: ['left'],  keys: ['A'], label: 'Left' },
-    { inputs: ['right'], keys: ['D'], label: 'Right' },
-  ],
-};
+// All available key groups. Add new entries here to expose them in the lobby UI.
+// `keys` lists the physical key names the client should listen for.
+// `displayKeys` is the human-readable label shown in the HUD.
+export const KEY_GROUPS = [
+  {
+    id: 'move-vertical',
+    inputs: ['up', 'down'],
+    keys: ['W', 'UP', 'S', 'DOWN'],
+    label: 'Up / Down',
+    displayKeys: 'W/↑   S/↓',
+  },
+  {
+    id: 'move-horizontal',
+    inputs: ['left', 'right'],
+    keys: ['A', 'LEFT', 'D', 'RIGHT'],
+    label: 'Left / Right',
+    displayKeys: 'A/←   D/→',
+  },
+  {
+    id: 'action',
+    inputs: ['action'],
+    keys: ['SPACE'],
+    label: 'Action',
+    displayKeys: 'Space',
+  },
+];
+
+const GROUP_BY_ID = Object.fromEntries(KEY_GROUPS.map(g => [g.id, g]));
+
+// Default assignment for each player slot (by join order)
+const DEFAULT_GROUP_IDS = ['move-vertical', 'move-horizontal', 'action', 'move-horizontal'];
 
 function loadMap(name) {
   const p = path.join(__dirname, '../maps', `${name}.json`);
@@ -34,25 +48,23 @@ function loadMap(name) {
 
 export class Lobby {
   constructor(code) {
-    this.code      = code;
-    this.players   = [];
-    this.inputs    = {};
-    this.started   = false;
-    this.map       = loadMap('level1');
-    this.character = { x: this.map.spawn.x, y: this.map.spawn.y };
-    this.gems      = [];
-    this.exit      = null;
-    this._gemsLeft = 0;
-    this._interval = null;
-    this._lastTick = 0;
+    this.code       = code;
+    this.players    = [];
+    this.inputs     = {};
+    this.started    = false;
+    this.map        = loadMap('level1');
+    this.character  = { x: this.map.spawn.x, y: this.map.spawn.y };
+    this.gems       = [];
+    this.exit       = null;
+    this._gemsLeft  = 0;
+    this._interval  = null;
+    this._lastTick  = 0;
     this._startTime = 0;
-    this._won      = false;
+    this._won       = false;
 
     this._parseMapObjects();
   }
 
-  // Scan the tile grid for gem (2) and exit (3) tiles, convert to pixel objects,
-  // then replace those tiles with floor (0) so collision ignores them.
   _parseMapObjects() {
     const { tiles, tileSize } = this.map;
     const half = tileSize / 2;
@@ -77,8 +89,9 @@ export class Lobby {
   }
 
   addPlayer(socketId, name) {
-    const slot = this.players.length;
-    this.players.push({ socketId, name, slot });
+    const slot       = this.players.length;
+    const keyGroupId = DEFAULT_GROUP_IDS[slot] ?? DEFAULT_GROUP_IDS[0];
+    this.players.push({ socketId, name, slot, keyGroupId });
     this.inputs[socketId] = { up: false, down: false, left: false, right: false, action: false };
     return slot;
   }
@@ -88,28 +101,34 @@ export class Lobby {
     delete this.inputs[socketId];
   }
 
+  assignKey(slot, groupId) {
+    if (!GROUP_BY_ID[groupId]) return;
+    const player = this.players.find(p => p.slot === slot);
+    if (player) player.keyGroupId = groupId;
+  }
+
   setInput(socketId, key, pressed) {
     const inp = this.inputs[socketId];
     if (inp && key in inp) inp[key] = pressed;
   }
 
   getPlayerList() {
-    return this.players.map(({ socketId, name, slot }) => ({ socketId, name, slot }));
+    return this.players.map(({ socketId, name, slot, keyGroupId }) =>
+      ({ socketId, name, slot, keyGroupId }));
   }
 
   getStartPayload() {
-    const slices = KEY_SLICES[this.players.length] ?? KEY_SLICES[4];
     return {
-      mapData:    this.map,
-      character:  this.character,
-      gems:       this.gems.map(({ id, x, y }) => ({ id, x, y })),
-      exit:       this.exit,
-      totalGems:  this.gems.length,
-      players:    this.players.map(p => ({
+      mapData:   this.map,
+      character: this.character,
+      gems:      this.gems.map(({ id, x, y }) => ({ id, x, y })),
+      exit:      this.exit,
+      totalGems: this.gems.length,
+      players:   this.players.map(p => ({
         socketId: p.socketId,
         name:     p.name,
         slot:     p.slot,
-        keySlice: slices[p.slot] ?? null,
+        keySlice: GROUP_BY_ID[p.keyGroupId] ?? KEY_GROUPS[0],
       })),
     };
   }
@@ -132,7 +151,6 @@ export class Lobby {
     const dt  = Math.min((now - this._lastTick) / 1000, 0.1);
     this._lastTick = now;
 
-    // Merge inputs
     const m = { up: false, down: false, left: false, right: false };
     for (const inp of Object.values(this.inputs)) {
       if (inp.up)    m.up    = true;
@@ -148,7 +166,6 @@ export class Lobby {
     const { tiles, tileSize } = this.map;
     let { x, y } = this.character;
 
-    // Resolve X
     x += vx * dt;
     const rTop = Math.floor((y - HALF + 1) / tileSize);
     const rBot = Math.floor((y + HALF - 1) / tileSize);
@@ -160,7 +177,6 @@ export class Lobby {
       if (tiles[rTop]?.[c] === 1 || tiles[rBot]?.[c] === 1) x = (c + 1) * tileSize + HALF;
     }
 
-    // Resolve Y
     y += vy * dt;
     const cLeft  = Math.floor((x - HALF + 1) / tileSize);
     const cRight = Math.floor((x + HALF - 1) / tileSize);
@@ -174,7 +190,6 @@ export class Lobby {
 
     this.character = { x, y };
 
-    // Gem collection
     for (const gem of this.gems) {
       if (gem.collected) continue;
       const dx = x - gem.x;
@@ -186,7 +201,6 @@ export class Lobby {
       }
     }
 
-    // Exit — only active once all gems collected
     if (this._gemsLeft === 0 && this.exit) {
       const dx = x - this.exit.x;
       const dy = y - this.exit.y;
