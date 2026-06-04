@@ -1,4 +1,5 @@
 export function setupMenuUI(socket, launchGame) {
+  const startPanel = document.getElementById('start-panel');
   const menuPanel  = document.getElementById('menu-panel');
   const lobbyPanel = document.getElementById('lobby-panel');
   const menuError  = document.getElementById('menu-error');
@@ -47,6 +48,14 @@ export function setupMenuUI(socket, launchGame) {
         : 'Start Game  (need ≥ 2 players)';
     }
   }
+
+  // ── Start screen ─────────────────────────────────────────────────────────
+
+  document.getElementById('play-btn').addEventListener('click', () => {
+    startPanel.classList.add('hidden');
+    menuPanel.classList.remove('hidden');
+    nameInput.focus();
+  });
 
   // ── Menu events ───────────────────────────────────────────────────────────
 

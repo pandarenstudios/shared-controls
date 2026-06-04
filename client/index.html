@@ -42,8 +42,8 @@
     h1 { color: #e94560; letter-spacing: 3px; font-size: 22px; }
     h2 { color: #e94560; letter-spacing: 2px; }
 
-    .muted  { color: #888; font-size: 12px; }
-    .error  { color: #e94560; font-size: 12px; min-height: 16px; }
+    .muted { color: #888; font-size: 12px; }
+    .error { color: #e94560; font-size: 12px; min-height: 16px; }
 
     input {
       background: #16213e;
@@ -101,13 +101,144 @@
     }
     .player-row.you  { border-left: 3px solid #e94560; }
     .player-row .keys { color: #ffd700; font-size: 12px; }
+
+    /* ── Start screen ── */
+    #start-panel { max-width: 480px; gap: 20px; }
+
+    .game-title {
+      text-align: center;
+      font-size: 32px;
+      letter-spacing: 6px;
+      color: #e94560;
+      text-shadow: 0 0 20px #e9456066;
+    }
+
+    .game-subtitle {
+      text-align: center;
+      color: #aaa;
+      font-size: 13px;
+      letter-spacing: 1px;
+    }
+
+    .instructions {
+      background: #0f3460;
+      border-radius: 6px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .instructions h3 {
+      color: #ffd700;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .key-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #ccc;
+    }
+
+    .key-row .player-count {
+      color: #e94560;
+      font-weight: bold;
+      min-width: 18px;
+    }
+
+    .key-tag {
+      background: #1a1a2e;
+      border: 1px solid #e94560;
+      border-radius: 3px;
+      color: #fffffe;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 1px 6px;
+    }
+
+    .key-row .separator { color: #444; }
+
+    .how-to-play {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .how-to-play li {
+      list-style: none;
+      padding-left: 16px;
+      position: relative;
+    }
+
+    .how-to-play li::before {
+      content: '›';
+      position: absolute;
+      left: 0;
+      color: #e94560;
+    }
   </style>
 </head>
 <body>
   <div id="ui-overlay">
 
+    <!-- ── Start screen ── -->
+    <div id="start-panel" class="panel">
+      <div class="game-title">SHARED<br>CONTROLS</div>
+      <p class="game-subtitle">2 – 4 players &nbsp;·&nbsp; one character &nbsp;·&nbsp; divided controls</p>
+
+      <div class="instructions">
+        <h3>How controls are split</h3>
+
+        <div class="key-row">
+          <span class="player-count">2P</span>
+          <span>Player 1: <span class="key-tag">W</span> <span class="key-tag">S</span></span>
+          <span class="separator">|</span>
+          <span>Player 2: <span class="key-tag">A</span> <span class="key-tag">D</span></span>
+        </div>
+
+        <div class="key-row">
+          <span class="player-count">3P</span>
+          <span>P1: <span class="key-tag">W</span><span class="key-tag">S</span></span>
+          <span class="separator">|</span>
+          <span>P2: <span class="key-tag">A</span><span class="key-tag">D</span></span>
+          <span class="separator">|</span>
+          <span>P3: <span class="key-tag">SPACE</span></span>
+        </div>
+
+        <div class="key-row">
+          <span class="player-count">4P</span>
+          <span>P1: <span class="key-tag">W</span></span>
+          <span class="separator">|</span>
+          <span>P2: <span class="key-tag">S</span></span>
+          <span class="separator">|</span>
+          <span>P3: <span class="key-tag">A</span></span>
+          <span class="separator">|</span>
+          <span>P4: <span class="key-tag">D</span></span>
+        </div>
+      </div>
+
+      <div class="instructions">
+        <h3>How to play</h3>
+        <ul class="how-to-play">
+          <li>One player creates a lobby and shares the 4-letter code</li>
+          <li>Everyone joins and the host starts the game</li>
+          <li>You each only control part of the character — work together</li>
+          <li>Your keys are shown in the top-left corner during the game</li>
+        </ul>
+      </div>
+
+      <button id="play-btn">Play</button>
+    </div>
+
     <!-- ── Menu ── -->
-    <div id="menu-panel" class="panel">
+    <div id="menu-panel" class="panel hidden">
       <h1>SHARED CONTROLS</h1>
       <p class="muted">2–4 players. One character. Divided controls.</p>
 
