@@ -5,7 +5,7 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SPEED       = 160; // px/sec
-const TICK_MS     = 50;  // 20 ticks/sec
+const TICK_MS     = 33;  // ~30 ticks/sec
 const HALF        = 12;  // character collision half-size
 const PICKUP_DIST = 20;  // px radius to collect a gem or trigger the exit
 

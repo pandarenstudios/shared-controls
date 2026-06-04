@@ -15,6 +15,13 @@ const PALETTE = {
 
 const SLOT_COLORS = ['#e94560', '#4fc3f7', '#81c784', '#ffb74d'];
 
+// Must match server constants exactly for prediction to be accurate
+const SPEED = 160;
+
+// How aggressively to pull displayPos toward the server's authoritative position.
+// Higher = snappier corrections; lower = smoother but slower to reconcile.
+const CORRECTION_SPEED = 12;
+
 export class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
@@ -25,7 +32,15 @@ export class GameScene extends Phaser.Scene {
     const { mapData, character, players, gems, exit, totalGems } = payload;
     const me = players.find(p => p.socketId === mySocketId);
 
-    this.charPos   = { ...character };
+    // serverPos  — last authoritative position from the server
+    // displayPos — what we actually render (predicted + corrected)
+    this.serverPos   = { ...character };
+    this.displayPos  = { ...character };
+
+    // This client's currently held inputs and the resulting velocity contribution
+    this.localInputs   = { up: false, down: false, left: false, right: false };
+    this.localVelocity = { vx: 0, vy: 0 };
+
     this.gemsLeft  = totalGems;
     this.totalGems = totalGems;
     this.exitPos   = exit;
@@ -38,15 +53,15 @@ export class GameScene extends Phaser.Scene {
     this._createHUD(players, me);
     this._setupInput(me?.keySlice);
 
-    socket.on('state', ({ character: c }) => { this.charPos = c; });
+    socket.on('state', ({ character: c }) => {
+      this.serverPos = c;
+    });
 
     socket.on('gem-collected', ({ id, gemsLeft }) => {
       this.gemsLeft = gemsLeft;
-      // Remove the individual gem graphic
       this.gemGraphics.get(id)?.destroy();
       this.gemGraphics.delete(id);
       this._updateGemCounter();
-      // Unlock the exit once all gems are gone
       if (gemsLeft === 0) this._openExit();
     });
 
@@ -97,7 +112,6 @@ export class GameScene extends Phaser.Scene {
     gfx.fillRect(exit.x - 14, exit.y - 14, 28, 28);
     gfx.lineStyle(2, color, 1);
     gfx.strokeRect(exit.x - 14, exit.y - 14, 28, 28);
-    // Small icon lines
     gfx.lineStyle(2, color, 0.9);
     gfx.beginPath();
     gfx.moveTo(exit.x - 5, exit.y);
@@ -111,7 +125,6 @@ export class GameScene extends Phaser.Scene {
 
   _openExit() {
     this._drawExit(this.exitPos, true);
-    // Pulse the exit to draw attention
     this.tweens.add({
       targets: this.exitGfx,
       alpha: { from: 0.5, to: 1 },
@@ -126,20 +139,10 @@ export class GameScene extends Phaser.Scene {
     for (const gem of gems) {
       const gfx = this.add.graphics().setDepth(5);
       gfx.fillStyle(PALETTE.gem, 1);
-      gfx.fillTriangle(
-        gem.x,      gem.y - 9,
-        gem.x - 7,  gem.y + 5,
-        gem.x + 7,  gem.y + 5,
-      );
+      gfx.fillTriangle(gem.x, gem.y - 9, gem.x - 7, gem.y + 5, gem.x + 7, gem.y + 5);
       gfx.lineStyle(1, PALETTE.gemGlow, 0.8);
-      gfx.strokeTriangle(
-        gem.x,      gem.y - 9,
-        gem.x - 7,  gem.y + 5,
-        gem.x + 7,  gem.y + 5,
-      );
+      gfx.strokeTriangle(gem.x, gem.y - 9, gem.x - 7, gem.y + 5, gem.x + 7, gem.y + 5);
       this.gemGraphics.set(gem.id, gfx);
-
-      // Gentle float animation
       this.tweens.add({
         targets: gfx,
         y: '-=4',
@@ -160,7 +163,6 @@ export class GameScene extends Phaser.Scene {
   // ── HUD ───────────────────────────────────────────────────────────────────
 
   _createHUD(players, me) {
-    // Player key labels — top-left
     let y = 6;
     for (const p of players) {
       const isMe    = p.socketId === me?.socketId;
@@ -174,21 +176,17 @@ export class GameScene extends Phaser.Scene {
       y += 18;
     }
 
-    // Gem counter — top-right
     const mapW = this.game.registry.get('startPayload').mapData.width
                * this.game.registry.get('startPayload').mapData.tileSize;
 
     this.gemCountText = this.add.text(mapW - 6, 6, this._gemLabel(), {
-      fontSize: '13px',
-      color: '#ffd700',
+      fontSize: '13px', color: '#ffd700',
       backgroundColor: '#00000099',
       padding: { x: 6, y: 3 },
     }).setOrigin(1, 0).setDepth(20);
 
-    // Objective hint — below gem counter
     this.hintText = this.add.text(mapW - 6, 26, 'collect all gems, then reach the exit', {
-      fontSize: '10px',
-      color: '#888888',
+      fontSize: '10px', color: '#888888',
       backgroundColor: '#00000099',
       padding: { x: 4, y: 2 },
     }).setOrigin(1, 0).setDepth(20);
@@ -206,21 +204,45 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── Input ─────────────────────────────────────────────────────────────────
+  // ── Input & prediction ────────────────────────────────────────────────────
 
   _setupInput(slice) {
     if (!slice) return;
+
     const KC = Phaser.Input.Keyboard.KeyCodes;
     const keyCodeMap  = { W: KC.W, S: KC.S, A: KC.A, D: KC.D, SPACE: KC.SPACE };
     const inputAction = { W: 'up', S: 'down', A: 'left', D: 'right', SPACE: 'action' };
+
     for (const keyName of slice.keys) {
       const code = keyCodeMap[keyName];
       if (!code) continue;
       const action = inputAction[keyName];
       const key = this.input.keyboard.addKey(code);
-      key.on('down', () => { if (!this.won) socket.emit('input', { key: action, pressed: true }); });
-      key.on('up',   () => socket.emit('input', { key: action, pressed: false }));
+
+      key.on('down', () => {
+        if (this.won) return;
+        socket.emit('input', { key: action, pressed: true });
+        if (action in this.localInputs) {
+          this.localInputs[action] = true;
+          this._recalcLocalVelocity();
+        }
+      });
+
+      key.on('up', () => {
+        socket.emit('input', { key: action, pressed: false });
+        if (action in this.localInputs) {
+          this.localInputs[action] = false;
+          this._recalcLocalVelocity();
+        }
+      });
     }
+  }
+
+  _recalcLocalVelocity() {
+    let vx = (this.localInputs.right ? SPEED : 0) - (this.localInputs.left ? SPEED : 0);
+    let vy = (this.localInputs.down  ? SPEED : 0) - (this.localInputs.up   ? SPEED : 0);
+    if (vx !== 0 && vy !== 0) { vx *= 0.7071; vy *= 0.7071; }
+    this.localVelocity = { vx, vy };
   }
 
   // ── Win screen ────────────────────────────────────────────────────────────
@@ -228,20 +250,32 @@ export class GameScene extends Phaser.Scene {
   _showWinScreen(time) {
     const mins = Math.floor(time / 60);
     const secs = time % 60;
-    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-
-    const overlay = document.getElementById('win-overlay');
-    document.getElementById('win-time').textContent = timeStr;
-    overlay.classList.remove('hidden');
+    document.getElementById('win-time').textContent = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    document.getElementById('win-overlay').classList.remove('hidden');
   }
 
   // ── Loop ──────────────────────────────────────────────────────────────────
 
-  update() {
+  update(_time, delta) {
+    if (!this.won) {
+      const dt = delta / 1000;
+
+      // Step 1: apply this client's predicted movement immediately
+      this.displayPos.x += this.localVelocity.vx * dt;
+      this.displayPos.y += this.localVelocity.vy * dt;
+
+      // Step 2: smoothly correct toward the server's authoritative position.
+      // This handles wall collisions the client didn't predict and other
+      // players' movement contributions that this client doesn't know about.
+      const lerp = 1 - Math.exp(-CORRECTION_SPEED * dt);
+      this.displayPos.x += (this.serverPos.x - this.displayPos.x) * lerp;
+      this.displayPos.y += (this.serverPos.y - this.displayPos.y) * lerp;
+    }
+
     this.charGfx.clear();
     this.charGfx.fillStyle(PALETTE.char);
-    this.charGfx.fillCircle(this.charPos.x, this.charPos.y, 13);
+    this.charGfx.fillCircle(this.displayPos.x, this.displayPos.y, 13);
     this.charGfx.fillStyle(PALETTE.charDot);
-    this.charGfx.fillCircle(this.charPos.x + 5, this.charPos.y - 5, 3);
+    this.charGfx.fillCircle(this.displayPos.x + 5, this.displayPos.y - 5, 3);
   }
 }
