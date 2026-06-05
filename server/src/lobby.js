@@ -1,4 +1,5 @@
 import { readFileSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -8,10 +9,8 @@ const SPEED       = 160;
 const TICK_MS     = 33;
 const HALF        = 12;
 const PICKUP_DIST = 20;
+const MAX_NAME_LEN = 24;
 
-// All available key groups. Add new entries here to expose them in the lobby UI.
-// `keys` lists the physical key names the client should listen for.
-// `displayKeys` is the human-readable label shown in the HUD.
 export const KEY_GROUPS = [
   {
     id: 'move-vertical',
@@ -37,9 +36,26 @@ export const KEY_GROUPS = [
 ];
 
 const GROUP_BY_ID = Object.fromEntries(KEY_GROUPS.map(g => [g.id, g]));
-
-// Default assignment for each player slot (by join order)
 const DEFAULT_GROUP_IDS = ['move-vertical', 'move-horizontal', 'action', 'move-horizontal'];
+
+// Cryptographically random 4-character alphanumeric code
+const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function generateCode(lobbies) {
+  let code;
+  do {
+    code = Array.from(randomBytes(4))
+      .map(b => CODE_CHARS[b % CODE_CHARS.length])
+      .join('');
+  } while (lobbies.has(code));
+  return code;
+}
+
+// Strip control characters and cap length. Returns 'Player' if the result is empty.
+function sanitizeName(raw) {
+  if (typeof raw !== 'string') return 'Player';
+  const clean = raw.trim().replace(/[\x00-\x1F\x7F]/g, '').slice(0, MAX_NAME_LEN);
+  return clean || 'Player';
+}
 
 function loadMap(name) {
   const p = path.join(__dirname, '../maps', `${name}.json`);
@@ -47,11 +63,14 @@ function loadMap(name) {
 }
 
 export class Lobby {
+  static generateCode = generateCode;
+
   constructor(code) {
     this.code       = code;
     this.players    = [];
     this.inputs     = {};
     this.started    = false;
+    this.createdAt  = Date.now();
     this.map        = loadMap('level1');
     this.character  = { x: this.map.spawn.x, y: this.map.spawn.y };
     this.gems       = [];
@@ -88,12 +107,19 @@ export class Lobby {
     }
   }
 
-  addPlayer(socketId, name) {
-    const slot       = this.players.length;
+  addPlayer(socketId, rawName) {
+    const name     = sanitizeName(rawName);
+    const slot     = this.players.length;
     const keyGroupId = DEFAULT_GROUP_IDS[slot] ?? DEFAULT_GROUP_IDS[0];
     this.players.push({ socketId, name, slot, keyGroupId });
     this.inputs[socketId] = { up: false, down: false, left: false, right: false, action: false };
     return slot;
+  }
+
+  // Returns a console-safe name for a given slot (strips ANSI-injectable chars)
+  safeName(slot) {
+    const p = this.players[slot];
+    return p ? p.name.replace(/\x1B/g, '?') : '?';
   }
 
   removePlayer(socketId) {
@@ -102,14 +128,17 @@ export class Lobby {
   }
 
   assignKey(slot, groupId) {
-    if (!GROUP_BY_ID[groupId]) return;
+    if (typeof groupId !== 'string' || !GROUP_BY_ID[groupId]) return;
     const player = this.players.find(p => p.slot === slot);
     if (player) player.keyGroupId = groupId;
   }
 
   setInput(socketId, key, pressed) {
     const inp = this.inputs[socketId];
-    if (inp && key in inp) inp[key] = pressed;
+    // Validate key is a known action and pressed is strictly boolean
+    if (inp && typeof key === 'string' && Object.prototype.hasOwnProperty.call(inp, key) && typeof pressed === 'boolean') {
+      inp[key] = pressed;
+    }
   }
 
   getPlayerList() {
